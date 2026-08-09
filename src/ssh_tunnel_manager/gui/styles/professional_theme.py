@@ -4,6 +4,10 @@ SSH Tunnel Manager - Professional Enterprise Theme
 Inspired by Linear, VS Code, and Slack - clean, purposeful, sophisticated
 """
 
+from pathlib import Path
+
+_ASSETS_DIR = (Path(__file__).parent.parent / "assets").as_posix()
+
 # Professional Color Palette - Enterprise Dark Theme
 COLORS = {
     # Base colors
@@ -57,15 +61,24 @@ def get_professional_stylesheet() -> str:
     """Return the complete professional stylesheet."""
     return f"""
 /* ==================== GLOBAL STYLES ==================== */
-QMainWindow {{
+QMainWindow, QDialog {{
     background-color: {COLORS['bg_app']};
 }}
 
 QWidget {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    background-color: {COLORS['bg_app']};
     font-size: 13px;
     color: {COLORS['text_primary']};
     outline: none;
+}}
+
+QScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+
+QScrollArea > QWidget > QWidget {{
+    background-color: transparent;
 }}
 
 /* ==================== MENU BAR ==================== */
@@ -120,10 +133,10 @@ QPushButton {{
     background-color: {COLORS['btn_secondary_bg']};
     border: 1px solid {COLORS['border_default']};
     border-radius: 6px;
-    padding: 5px 16px;
+    padding: 3px 14px;
     font-weight: 500;
     color: {COLORS['text_primary']};
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QPushButton:hover {{
@@ -271,9 +284,10 @@ QLineEdit {{
     background-color: {COLORS['bg_tertiary']};
     border: 1px solid {COLORS['border_default']};
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 3px 8px;
     color: {COLORS['text_primary']};
     selection-background-color: {COLORS['accent_secondary']};
+    min-height: 22px;
 }}
 
 QLineEdit:focus {{
@@ -291,9 +305,9 @@ QComboBox {{
     background-color: {COLORS['bg_tertiary']};
     border: 1px solid {COLORS['border_default']};
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 3px 8px;
     color: {COLORS['text_primary']};
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QComboBox:hover {{
@@ -310,10 +324,9 @@ QComboBox::drop-down {{
 }}
 
 QComboBox::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {COLORS['text_secondary']};
+    image: url({_ASSETS_DIR}/spin_arrow_down.png);
+    width: 10px;
+    height: 6px;
     margin-right: 8px;
 }}
 
@@ -331,13 +344,51 @@ QSpinBox, QDoubleSpinBox {{
     background-color: {COLORS['bg_tertiary']};
     border: 1px solid {COLORS['border_default']};
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 3px 8px;
     color: {COLORS['text_primary']};
-    min-height: 28px;
+    min-height: 22px;
 }}
 
 QSpinBox:focus, QDoubleSpinBox:focus {{
     border-color: {COLORS['accent_secondary']};
+}}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 16px;
+    border-left: 1px solid {COLORS['border_default']};
+    border-top-right-radius: 6px;
+    background-color: {COLORS['bg_tertiary']};
+}}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {{
+    background-color: {COLORS['bg_elevated']};
+}}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 16px;
+    border-left: 1px solid {COLORS['border_default']};
+    border-bottom-right-radius: 6px;
+    background-color: {COLORS['bg_tertiary']};
+}}
+
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+    background-color: {COLORS['bg_elevated']};
+}}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url({_ASSETS_DIR}/spin_arrow_up.png);
+    width: 10px;
+    height: 6px;
+}}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url({_ASSETS_DIR}/spin_arrow_down.png);
+    width: 10px;
+    height: 6px;
 }}
 
 /* ==================== CHECK BOX ==================== */

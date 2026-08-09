@@ -1,5 +1,42 @@
 # SSH Tunnel Manager - Release Notes
 
+## Version 2.1.0
+
+**Release Date:** 2026-08-09
+
+### Major Changes
+
+#### Headless tunnel launching (breaking change for password-auth tunnels)
+
+Tunnels no longer spawn a visible terminal window that has to stay open. They now launch as
+headless background processes, using `autossh` when available (falling back to plain `ssh`),
+with SSH `ControlMaster`/`ControlPath` multiplexing for clean status checks and shutdown
+(`ssh -O exit`) instead of raw process signals.
+
+- **Breaking:** starting a tunnel now requires a resolvable SSH key (explicit key path or a
+  default key in `~/.ssh/`). Password-only tunnels, which relied on typing a password into the
+  spawned terminal, can no longer be started this way — use Tools → SSH Keys to generate and
+  deploy a key first.
+- "Auto-start on application launch" (previously a no-op checkbox) now actually works.
+- New Tools → Clean Up Orphaned Tunnel Processes, backed by `psutil`, to find and terminate
+  ssh/autossh tunnel processes left running from a previous session.
+- Per-tunnel output is now captured into both the app's log widget and a log file under
+  `~/.ssh/.stm/logs/`.
+
+#### Other fixes this release
+
+- Fixed a crash on every launch of the main tunnel-manager window (`self.log` was never bound
+  to a real callable).
+- Fixed broken/missing `ssh-tunnel-manager-gui` and `third-party-installer-gui` entry points.
+- Fixed `--version`/`--help` on the `ssh-tunnel-manager`/`ssh-tools-installer` CLI commands
+  (previously `--version` launched the GUI instead of printing a version).
+- Fixed cramped/overlapping fields in the tunnel dialog, missing spin-box arrow glyphs, and a
+  white-background rendering bug that made several labels invisible depending on the system's
+  Qt palette.
+- Removed the legacy, conflicting `setup.py` in favor of `pyproject.toml`; cleaned up stale
+  `MANIFEST.in` rules from an old repo layout.
+- Added a Linux AppImage build to CI alongside the existing Windows build.
+
 ## Version 2.0.0 - Professional Edition
 
 **Release Date:** January 30, 2026

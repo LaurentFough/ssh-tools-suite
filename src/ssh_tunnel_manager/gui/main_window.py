@@ -85,6 +85,8 @@ class SSHTunnelManager(QMainWindow):
         # Initialize data
         self._load_configurations()
         self._start_monitoring()
+        self.auto_start_tunnels()
+        self._check_orphaned_tunnel_processes()
     
     def _set_window_icon(self):
         """Set a custom window icon."""
@@ -223,6 +225,11 @@ class SSHTunnelManager(QMainWindow):
         network_scanner_action = QAction("🔍 Network Scanner", self)
         network_scanner_action.triggered.connect(self.network_scanner.show_scanner)
         tools_menu.addAction(network_scanner_action)
+
+        tools_menu.addSeparator()
+        cleanup_orphans_action = QAction("🧹 Clean Up Orphaned Tunnel Processes", self)
+        cleanup_orphans_action.triggered.connect(self._cleanup_orphaned_tunnel_processes)
+        tools_menu.addAction(cleanup_orphans_action)
         
         # View menu
         view_menu = menubar.addMenu("View")
@@ -278,7 +285,55 @@ class SSHTunnelManager(QMainWindow):
         self.monitor_thread.status_update.connect(self._update_tunnel_status)
         self.monitor_thread.connection_lost.connect(self._handle_connection_lost)
         self.monitor_thread.start()
-    
+
+    def _known_tunnel_pids(self) -> set:
+        """PIDs of tunnel processes tracked in the current session."""
+        return {
+            tunnel.process.pid
+            for tunnel in self.active_tunnels.values()
+            if tunnel.process is not None
+        }
+
+    def _check_orphaned_tunnel_processes(self):
+        """Log a warning if ssh/autossh tunnel processes from a previous session are still running."""
+        from ..core.process_utils import find_orphaned_tunnel_processes
+
+        try:
+            orphans = find_orphaned_tunnel_processes(self._known_tunnel_pids())
+        except Exception as e:
+            self.log(f"Could not check for orphaned tunnel processes: {e}", "warning")
+            return
+
+        if orphans:
+            self.log(
+                f"⚠️ Found {len(orphans)} orphaned tunnel process(es) from a previous session "
+                f"(Tools -> Clean Up Orphaned Tunnel Processes to remove):",
+                "warning"
+            )
+            for orphan in orphans:
+                self.log(f"   PID {orphan['pid']}: {orphan['cmdline']}", "warning")
+
+    def _cleanup_orphaned_tunnel_processes(self):
+        """Menu action: find and terminate orphaned tunnel processes."""
+        from ..core.process_utils import find_orphaned_tunnel_processes, kill_orphaned_tunnel_processes
+
+        orphans = find_orphaned_tunnel_processes(self._known_tunnel_pids())
+        if not orphans:
+            QMessageBox.information(self, "Clean Up Orphaned Processes", "No orphaned tunnel processes found.")
+            return
+
+        pid_list = "\n".join(f"PID {o['pid']}: {o['cmdline']}" for o in orphans)
+        reply = QMessageBox.question(
+            self, "Clean Up Orphaned Processes",
+            f"Found {len(orphans)} orphaned tunnel process(es):\n\n{pid_list}\n\nTerminate them?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        succeeded, failed = kill_orphaned_tunnel_processes([o['pid'] for o in orphans])
+        self.log(f"🧹 Cleaned up orphaned tunnel processes: {succeeded} terminated, {failed} failed", "info")
+
     def _refresh_ui(self):
         """Refresh all UI components."""
         configs = self.config_manager.get_all_configurations()
@@ -386,21 +441,24 @@ class SSHTunnelManager(QMainWindow):
         config = self.config_manager.get_configuration(config_name)
         if not config:
             return
-        
+
         self.log(f"Starting tunnel: {config_name}", "info")
-        
+
         if config_name not in self.active_tunnels:
-            self.active_tunnels[config_name] = TunnelProcess(config, None)
-        
+            self.active_tunnels[config_name] = TunnelProcess(config, self.log)
+
         tunnel = self.active_tunnels[config_name]
         tunnel.status = tunnel.STATUS_STARTING
         self._refresh_ui()
-        
-        if tunnel.start():
-            self.log(f"Tunnel started: {config_name}", "success")
-            self._refresh_ui()
-        else:
-            self.log(f"Failed to start tunnel: {config_name}", "error")
+
+        try:
+            if tunnel.start():
+                self.log(f"Tunnel started: {config_name}", "success")
+            else:
+                self.log(f"Failed to start tunnel: {config_name}", "error")
+        except Exception as e:
+            self.log(f"Failed to start tunnel {config_name}: {e}", "error")
+        finally:
             self._refresh_ui()
     
     def _stop_tunnel(self):

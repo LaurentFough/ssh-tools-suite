@@ -37,62 +37,68 @@ SSH Tools Suite is a comprehensive toolkit for managing SSH tunnels, streaming R
 
 ## 🚀 Quick Start
 
-### Installation Options
+### Install & run (recommended)
 
-#### Option 1: PyPI Installation (Recommended for Python Users)
+[pipx](https://pipx.pypa.io/) installs the suite into its own isolated environment and puts the commands on your `PATH` — two commands and you're running:
+
 ```bash
-# Install the latest stable version from PyPI
-pip install ssh-tools-suite
+pipx install ssh-tools-suite
+ssh-tunnel-manager-gui
 ```
 
-#### Option 2: Standalone Executables (No Python Required)
+This works the same way on Linux, macOS, and Windows. Don't have pipx? `pip install --user pipx` (or `python -m pip install --user pipx` on Windows) first.
 
-For users who prefer not to install Python or want a portable solution, download pre-built executables from our [**GitHub Releases**](https://github.com/NicholasKozma/ssh_tools_suite/releases) page:
+### Other installation options
 
-- **Windows**: Download and extract `SSH-Tunnel-Manager-v*.*.*.zip` or `SSH-Tools-Installer-v*.*.*.zip`
-- **macOS**: Download `SSH-Tools-Suite-v*.*.*.dmg` (coming soon)
-- **Linux**: Download `SSH-Tools-Suite-v*.*.*.AppImage` (coming soon)
+<details>
+<summary>Plain pip (no isolation)</summary>
 
-**Benefits of Standalone Executables:**
-- ✅ No Python installation required
-- ✅ Fast startup (~2-3 seconds)
-- ✅ Portable - run from any folder
-- ✅ All dependencies included
-- ✅ Perfect for end users and system administrators
-
-#### Option 3: From Source
 ```bash
-# Install from GitHub source
+pip install ssh-tools-suite
+ssh-tunnel-manager-gui
+```
+</details>
+
+<details>
+<summary>Standalone executables (no Python required)</summary>
+
+Download pre-built binaries from [**GitHub Releases**](https://github.com/NicholasKozma/ssh_tools_suite/releases):
+
+- **Windows**: `SSH-Tunnel-Manager-v*.*.*-Windows.zip` / `SSH-Tools-Installer-v*.*.*-Windows.zip` — extract and run
+- **Linux**: `SSH-Tunnel-Manager-v*.*.*-x86_64.AppImage` — `chmod +x` and run, no install step
+- **macOS**: coming soon
+</details>
+
+<details>
+<summary>From source (for development)</summary>
+
+```bash
 git clone https://github.com/NicholasKozma/ssh_tools_suite.git
 cd ssh_tools_suite
 pip install -e .
 ```
+</details>
 
-### Verify Installation
+### Verify the install
 ```bash
-# Check if installation was successful
 ssh-tunnel-manager --version
 ssh-tools-installer --version
 ```
 
-### Basic Usage
+### Run it
 
-#### GUI Mode (Recommended)
 ```bash
-# Start SSH Tunnel Manager GUI
+# SSH Tunnel Manager GUI
 ssh-tunnel-manager-gui
 
-# Start Third-Party Installer GUI  
+# Third-Party Installer GUI (installs Windows-only helper tools: PsExec, VLC, FFmpeg, px proxy)
 third-party-installer-gui
 ```
 
-#### Command Line Mode
+Command-line help (both commands accept `--help`/`--version` but otherwise launch the GUI):
 ```bash
-# SSH Tunnel Manager CLI
 ssh-tunnel-manager --help
-
-# Third-Party Installer CLI
-third-party-installer --help
+ssh-tools-installer --help
 ```
 
 ### Create Your First Tunnel

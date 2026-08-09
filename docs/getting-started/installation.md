@@ -7,7 +7,17 @@ This guide will help you install and set up the SSH Tools Suite on your system.
 
 ## Quick Installation
 
-The easiest way to install SSH Tools Suite is via PyPI:
+The recommended way to install SSH Tools Suite is with [pipx](https://pipx.pypa.io/), which
+installs it into an isolated environment and puts the commands on your `PATH`:
+
+```bash
+pipx install ssh-tools-suite
+ssh-tunnel-manager-gui
+```
+
+If you don't have pipx: `pip install --user pipx`.
+
+Plain `pip` also works if you don't need the isolation:
 
 ```bash
 {{ pip_install_cmd() }}
@@ -179,6 +189,9 @@ python -c "import ssh_tunnel_manager; print(ssh_tunnel_manager.__version__)"
 ```bash
 # Start the SSH Tunnel Manager GUI
 ssh-tunnel-manager-gui
+
+# Start the Third-Party Installer GUI
+third-party-installer-gui
 
 # Or run the module directly
 python -m ssh_tunnel_manager.gui

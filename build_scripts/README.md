@@ -1,43 +1,24 @@
 # Build Scripts for SSH Tools Suite
 
-This directory contains build scripts for creating standalone executables.
+Standalone executables are built by [`.github/workflows/build-and-release.yml`](../.github/workflows/build-and-release.yml),
+which runs on `windows-latest` whenever a GitHub Release is published (or via manual dispatch).
+That workflow is the source of truth for build arguments — see it for the exact PyInstaller invocation.
 
-## PyInstaller Build Scripts
+## Building locally
 
-### SSH Tunnel Manager GUI
+To reproduce a build locally on Windows:
+
 ```bash
-python build_scripts/build_ssh_tunnel_manager.py
-```
+pip install -e .[dev]
 
-### Manual PyInstaller Commands
+pyinstaller --onedir --windowed --name="SSH-Tunnel-Manager" \
+           --add-data="src/ssh_tunnel_manager/gui/assets;assets" \
+           --clean ssh_tunnel_manager_app.py
 
-#### SSH Tunnel Manager GUI
-```bash
-pyinstaller --name="SSH-Tunnel-Manager-GUI" \
-           --onefile \
-           --windowed \
-           --add-data="src/ssh_tunnel_manager/gui/assets;ssh_tunnel_manager/gui/assets" \
-           --hidden-import=PySide6 \
-           --hidden-import=ssh_tunnel_manager \
-           --distpath=dist/executables \
-           src/ssh_tunnel_manager/gui/__main__.py
-```
-
-#### SSH Tools Installer
-```bash
-pyinstaller --name="SSH-Tools-Installer" \
-           --onefile \
-           --windowed \
-           --hidden-import=third_party_installer \
-           --distpath=dist/executables \
-           src/third_party_installer/__main__.py
+pyinstaller --onedir --windowed --name="SSH-Tools-Installer" \
+           --clean third_party_installer_app.py
 ```
 
 ## Output
-- Executables will be created in `dist/executables/`
-- Build files will be in `build/`
-- Spec files will be in `build/specs/`
-
-## Requirements
-- Install PyInstaller: `pip install pyinstaller`
-- Or install with dev dependencies: `pip install -e .[dev]`
+- Executables are created in `dist/`
+- Build files are in `build/`

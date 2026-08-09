@@ -98,10 +98,34 @@ class TunnelConfig:
         
         return True, ""
     
-    def get_ssh_command_args(self) -> list[str]:
-        """Generate SSH command arguments for this tunnel."""
+    def resolve_ssh_key_path(self) -> Optional[str]:
+        """Resolve the SSH private key to use: explicit path first, then default locations."""
         import os
-        
+        from pathlib import Path
+
+        if self.ssh_key_path and os.path.exists(self.ssh_key_path):
+            return self.ssh_key_path
+
+        home = Path.home()
+        default_keys = [
+            home / '.ssh' / 'id_ed25519',
+            home / '.ssh' / 'id_ecdsa',
+            home / '.ssh' / 'id_rsa',
+            home / '.ssh' / 'id_dsa'
+        ]
+
+        for key_path in default_keys:
+            if key_path.exists():
+                return str(key_path)
+
+        return None
+
+    def get_ssh_command_args(self, control_path: Optional[str] = None) -> list[str]:
+        """Generate SSH command arguments for this tunnel.
+
+        Requires a resolvable SSH key (see resolve_ssh_key_path()) since tunnels run
+        headlessly with no TTY for interactive password entry.
+        """
         # Build tunnel argument based on type
         if self.tunnel_type == 'local':
             tunnel_arg = f"-L {self.local_port}:{self.remote_host}:{self.remote_port}"
@@ -109,13 +133,22 @@ class TunnelConfig:
             tunnel_arg = f"-R {self.remote_port}:localhost:{self.local_port}"
         else:  # dynamic
             tunnel_arg = f"-D {self.local_port}"
-        
+
+        key_to_use = self.resolve_ssh_key_path()
+        if not key_to_use:
+            raise ValueError(
+                f"No SSH key found for tunnel '{self.name}'. Generate or deploy one via "
+                f"Tools -> SSH Keys, or set a key path in Edit -> SSH Key Path."
+            )
+
         cmd = [
             'ssh',
             '-N',  # Don't execute remote command
             tunnel_arg,
             f"{self.ssh_user}@{self.ssh_host}",
             '-p', str(self.ssh_port),
+            '-i', key_to_use,
+            '-o', 'BatchMode=yes',
             '-o', 'StrictHostKeyChecking=no',
             '-o', 'UserKnownHostsFile=/dev/null',
             '-o', 'ServerAliveInterval=30',
@@ -124,44 +157,17 @@ class TunnelConfig:
             '-o', 'ExitOnForwardFailure=yes',
             '-o', 'ConnectTimeout=30'
         ]
-        
-        # Add SSH key - check specified key first, then default locations
-        key_to_use = None
-        
-        if self.ssh_key_path and os.path.exists(self.ssh_key_path):
-            key_to_use = self.ssh_key_path
-        else:
-            # Check for default SSH keys in standard locations
-            from pathlib import Path
-            home = Path.home()
-            default_keys = [
-                home / '.ssh' / 'id_rsa',
-                home / '.ssh' / 'id_ed25519',
-                home / '.ssh' / 'id_ecdsa',
-                home / '.ssh' / 'id_dsa'
-            ]
-            
-            for key_path in default_keys:
-                if key_path.exists():
-                    key_to_use = str(key_path)
-                    break
-        
-        if key_to_use:
-            cmd.extend(['-i', key_to_use])
-            # For key authentication, prefer key-based auth but allow fallback
+
+        if control_path:
+            # Deliberately no ControlPersist: with a NEW master, ControlPersist makes ssh
+            # fork into the background after connecting ("like using the -f option"), which
+            # would detach the tunnel from the subprocess.Popen handle we track it by. We
+            # want ssh to stay in the foreground for the life of the tunnel, tracked by us.
             cmd.extend([
-                '-o', 'PreferredAuthentications=publickey,password',
-                '-o', 'BatchMode=no'
+                '-o', 'ControlMaster=auto',
+                '-o', f'ControlPath={control_path}',
             ])
-        else:
-            # For password authentication, enable interactive mode
-            cmd.extend([
-                '-o', 'BatchMode=no',
-                '-o', 'PasswordAuthentication=yes',
-                '-o', 'PreferredAuthentications=password',
-                '-o', 'NumberOfPasswordPrompts=1'
-            ])
-        
+
         return cmd
     
     def get_display_name(self) -> str:

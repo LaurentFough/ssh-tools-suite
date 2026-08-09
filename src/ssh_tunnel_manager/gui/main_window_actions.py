@@ -104,48 +104,35 @@ class MainWindowActions:
                 self.log(f"Deleted tunnel configuration: {name}")
     
     def start_tunnel(self):
-        """Start selected tunnel in a native terminal window."""
+        """Start selected tunnel as a headless background process."""
         row = self.tunnel_table.currentRow()
         if row < 0:
             return
-        
+
         name = self.tunnel_table.item(row, 0).text()
         config = self.config_manager.get_configuration(name)
         if not config:
             return
-        
+
         try:
-            # Check if SSH key is configured for informational logging
-            uses_password = not (config.ssh_key_path and os.path.exists(config.ssh_key_path))
-            
-            if uses_password:
-                self.log(f"🔐 Starting SSH tunnel: {name}")
-                self.log(f"🔗 Connecting to: {config.ssh_user}@{config.ssh_host}:{config.ssh_port}")
-                self.log("💻 A new terminal window will open - please enter your password when prompted")
-                self.log("⚠️  IMPORTANT: Keep the terminal window open to maintain the tunnel!")
-            else:
-                self.log(f"🔑 Starting SSH tunnel with key authentication: {name}")
-                self.log(f"🔗 Connecting to: {config.ssh_user}@{config.ssh_host}:{config.ssh_port}")
-                self.log("💻 A new terminal window will open for the SSH connection")
-                self.log("⚠️  IMPORTANT: Keep the terminal window open to maintain the tunnel!")
-            
+            self.log(f"🔑 Starting SSH tunnel: {name}")
+            self.log(f"🔗 Connecting to: {config.ssh_user}@{config.ssh_host}:{config.ssh_port}")
+
             # Create or get tunnel process
             if name not in self.active_tunnels:
-                self.active_tunnels[name] = TunnelProcess(config, None)
+                self.active_tunnels[name] = TunnelProcess(config, self.log)
             else:
                 self.active_tunnels[name].config = config
-                self.active_tunnels[name].terminal_widget = None
-            
+                self.active_tunnels[name].log_callback = self.log
+
             tunnel = self.active_tunnels[name]
             if tunnel.start():
-                self.log(f"✅ SSH tunnel process started: {name}")
-                self.log("📝 The tunnel will remain active as long as the terminal window stays open")
-                self.log("🛑 To stop the tunnel: close the terminal window or use the 'Stop Tunnel' button")
+                self.log(f"✅ SSH tunnel started in the background: {name}")
                 self.refresh_table()
                 self.on_selection_changed()
             else:
                 self.log(f"❌ Failed to start tunnel: {name}")
-                
+
         except Exception as e:
             self.log(f"❌ Error starting tunnel {name}: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to start tunnel: {str(e)}")
@@ -246,18 +233,18 @@ class MainWindowActions:
             try:
                 # Only auto-start if not already running
                 if name not in self.active_tunnels or not self.active_tunnels[name].is_running:
-                    # For auto-start, only use key-based auth (no password prompts)
-                    if config.ssh_key_path and os.path.exists(config.ssh_key_path):
+                    # Auto-start requires key-based auth (no TTY available for a password prompt)
+                    if config.resolve_ssh_key_path():
                         if name not in self.active_tunnels:
-                            self.active_tunnels[name] = TunnelProcess(config)
-                        
+                            self.active_tunnels[name] = TunnelProcess(config, self.log)
+
                         if self.active_tunnels[name].start():
                             self.log(f"🚀 Auto-started tunnel: {name}")
                             count += 1
                         else:
                             self.log(f"❌ Failed to auto-start tunnel: {name}")
                     else:
-                        self.log(f"⚠️ Skipping auto-start for {name} - requires SSH key for auto-start")
+                        self.log(f"⚠️ Skipping auto-start for {name} - no SSH key found (Tools -> SSH Keys)")
             except Exception as e:
                 self.log(f"❌ Error auto-starting tunnel {name}: {str(e)}")
         

@@ -979,12 +979,17 @@ class ThirdPartyInstallerGUI(QMainWindow):
 
 def main():
     """Main function for running the installer standalone."""
+    from importlib.metadata import version, PackageNotFoundError
+
     app = QApplication(sys.argv)
-    
+
     # Set application properties
     app.setApplicationName("Third Party Installer")
     app.setApplicationDisplayName("SSH Tools Suite - Third Party Installer")
-    app.setApplicationVersion("1.0.1")
+    try:
+        app.setApplicationVersion(version("ssh-tools-suite"))
+    except PackageNotFoundError:
+        app.setApplicationVersion("unknown")
     
     # Create and show the installer window
     installer = ThirdPartyInstallerGUI()

@@ -153,8 +153,8 @@ ssh-tools-suite/
 ├── tools/                        # Development tools
 ├── licenses/                     # Third-party licenses
 ├── ssh_tunnel_manager_app.py     # Main tunnel manager app
-├── ssh_installer_app.py          # Main installer app
-├── setup.py                      # Package configuration
+├── third_party_installer_app.py  # Main installer app
+├── pyproject.toml                # Package configuration
 ├── requirements.txt              # Dependencies
 ├── pytest.ini                    # Test configuration
 └── mkdocs.yml                   # Documentation configuration

@@ -6,9 +6,9 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  build-executables:
+  build-windows:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -58,5 +58,86 @@ jobs:
         files: |
           dist/SSH-Tunnel-Manager-v${{ steps.get_version.outputs.VERSION }}-Windows.zip
           dist/SSH-Tools-Installer-v${{ steps.get_version.outputs.VERSION }}-Windows.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux-appimage:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Extract version from tag
+      id: get_version
+      shell: bash
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        else
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Install system Qt runtime dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libegl1 libxkbcommon0 libxkbcommon-x11-0 \
+          libdbus-1-3 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+          libxcb-xinerama0 libxcb-xkb1 libgl1
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -e .
+
+    - name: Build SSH Tunnel Manager executable
+      run: |
+        pyinstaller --onedir --windowed --name="SSH-Tunnel-Manager" --add-data="src/ssh_tunnel_manager/gui/assets:assets" --clean ssh_tunnel_manager_app.py
+
+    - name: Package AppImage
+      run: |
+        set -euo pipefail
+        APPDIR=AppDir
+        mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+        cp -r dist/SSH-Tunnel-Manager/* "$APPDIR/usr/bin/"
+        cp src/ssh_tunnel_manager/gui/assets/vlc_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/ssh-tunnel-manager.png"
+        cp src/ssh_tunnel_manager/gui/assets/vlc_icon.png "$APPDIR/ssh-tunnel-manager.png"
+
+        cat > "$APPDIR/usr/share/applications/ssh-tunnel-manager.desktop" <<EOF
+        [Desktop Entry]
+        Type=Application
+        Name=SSH Tunnel Manager
+        Exec=SSH-Tunnel-Manager
+        Icon=ssh-tunnel-manager
+        Categories=Network;
+        Terminal=false
+        EOF
+        cp "$APPDIR/usr/share/applications/ssh-tunnel-manager.desktop" "$APPDIR/"
+
+        cat > "$APPDIR/AppRun" <<'EOF'
+        #!/bin/bash
+        HERE="$(dirname "$(readlink -f "${0}")")"
+        exec "$HERE/usr/bin/SSH-Tunnel-Manager" "$@"
+        EOF
+        chmod +x "$APPDIR/AppRun"
+
+        curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool
+        ARCH=x86_64 ./appimagetool --appimage-extract-and-run "$APPDIR" "SSH-Tunnel-Manager-v${{ steps.get_version.outputs.VERSION }}-x86_64.AppImage"
+
+    - name: Upload AppImage to release
+      uses: softprops/action-gh-release@v1
+      if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+      with:
+        files: SSH-Tunnel-Manager-v${{ steps.get_version.outputs.VERSION }}-x86_64.AppImage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

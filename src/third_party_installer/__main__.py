@@ -3,11 +3,25 @@
 Third Party Installer Entry Point
 """
 
+import argparse
 import sys
 import os
+from importlib.metadata import version, PackageNotFoundError
+
+
+def _get_version() -> str:
+    try:
+        return version("ssh-tools-suite")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 def main():
     """Main entry point for the third-party installer."""
+    parser = argparse.ArgumentParser(prog="ssh-tools-installer", description="SSH Tools Suite - Third-Party Installer")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_get_version()}")
+    parser.parse_args()
+
     try:
         from .gui.main_window import ThirdPartyInstallerGUI
         from PySide6.QtWidgets import QApplication
@@ -17,7 +31,7 @@ def main():
         # Set application properties
         app.setApplicationName("Third Party Installer")
         app.setApplicationDisplayName("SSH Tools Suite - Third Party Installer")
-        app.setApplicationVersion("1.0.1")
+        app.setApplicationVersion(_get_version())
         
         # Create and show the installer window
         installer = ThirdPartyInstallerGUI()

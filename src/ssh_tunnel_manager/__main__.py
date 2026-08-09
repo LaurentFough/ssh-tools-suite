@@ -3,25 +3,38 @@
 SSH Tunnel Manager - Module Entry Point
 """
 
-from .gui import SSHTunnelManager
-from .gui.main_window_actions import MainWindowActions
-
+import argparse
 import sys
-try:
-    from PySide6.QtWidgets import QApplication
-    from PySide6.QtCore import Qt
-except ImportError:
-    print("PySide6 not installed. Please install with: pip install PySide6")
-    sys.exit(1)
+from importlib.metadata import version, PackageNotFoundError
 
 
-class SSHTunnelManagerApp(SSHTunnelManager, MainWindowActions):
-    """Complete SSH Tunnel Manager application with all functionality."""
-    pass
+def _get_version() -> str:
+    try:
+        return version("ssh-tools-suite")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def main():
     """Main application entry point."""
+    parser = argparse.ArgumentParser(prog="ssh-tunnel-manager", description="SSH Tunnel Manager")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_get_version()}")
+    parser.parse_args()
+
+    from .gui import SSHTunnelManager
+    from .gui.main_window_actions import MainWindowActions
+
+    try:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import Qt
+    except ImportError:
+        print("PySide6 not installed. Please install with: pip install PySide6")
+        sys.exit(1)
+
+    class SSHTunnelManagerApp(SSHTunnelManager, MainWindowActions):
+        """Complete SSH Tunnel Manager application with all functionality."""
+        pass
+
     # Enable high DPI scaling
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)

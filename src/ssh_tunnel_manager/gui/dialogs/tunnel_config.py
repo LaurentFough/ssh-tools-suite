@@ -22,8 +22,9 @@ class TunnelConfigDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Tunnel Configuration")
-        self.setFixedSize(600, 550)  # Increased size for RTSP section
+        self.setMinimumWidth(600)
         self.setup_ui()
+        self.resize(self.sizeHint())
         
         if config:
             self.load_config(config)
