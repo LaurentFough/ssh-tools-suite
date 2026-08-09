@@ -239,6 +239,17 @@ class TunnelConfig:
             '-o', 'TCPKeepAlive=yes',
             '-o', 'ExitOnForwardFailure=yes',
             '-o', 'ConnectTimeout=30',
+            # IPv4-only: for dynamic (SOCKS) tunnels, a client that resolves a target
+            # hostname locally (e.g. plain `curl --socks5`, as opposed to
+            # `--socks5-hostname`) can hand ssh an IPv6 literal to connect to on its
+            # behalf. Confirmed by reproduction: if the SSH server's network has an
+            # IPv6 address assigned but no actually-working IPv6 route (common on
+            # VPS/cloud hosts), ssh just fails that connect and closes the SOCKS
+            # session - no Happy-Eyeballs-style IPv4 fallback - which silently breaks
+            # every dual-stack destination (most real sites) while single-stack IPv4
+            # ones keep working, making it look host-specific. Also applies to local/
+            # remote forwards' own destination resolution for the same reason.
+            '-o', 'AddressFamily=inet',
             '-o', 'ControlMaster=no',
             '-o', 'ControlPath=none',
             # A harmless, inert marker (the remote side just ignores an unrecognized

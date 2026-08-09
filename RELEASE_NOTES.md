@@ -1,5 +1,30 @@
 # SSH Tunnel Manager - Release Notes
 
+## Version 2.2.1
+
+**Release Date:** 2026-08-09
+
+### Fixed: dynamic (SOCKS) tunnels silently failing for some destinations, but not others
+
+Reported as: `curl --socks5` through the tunnel worked for some sites (e.g. an IPv4-only host)
+but failed with "Failed to receive SOCKS response, proxy closed connection" for others (e.g.
+`google.ca`, `example.com`), while `curl --socks4` worked for everything.
+
+Root cause: SOCKS4 can only ever carry an IPv4 address, so a SOCKS4 client is forced to resolve
+locally and hand the proxy an IPv4 literal. A SOCKS5 client resolving locally (curl's default
+`--socks5`, as opposed to `--socks5-hostname`) can hand the proxy an IPv6 literal instead, for
+any destination that has an AAAA record — confirmed by checking DNS: `example.com`/`google.ca`
+have both A and AAAA records (and failed), `ipinfo.io` is IPv4-only (and worked). If the SSH
+server's network has an IPv6 address assigned but no working IPv6 route out (common on
+VPS/cloud hosts), `ssh -D`'s SOCKS server just fails that connect attempt and closes the
+session — no Happy-Eyeballs-style fallback to IPv4 — which looks host-specific but is really an
+IPv6-vs-IPv4 issue.
+
+**Fix:** tunnels now pass `-o AddressFamily=inet`, forcing IPv4 for every connection the ssh
+process makes on the tunnel's behalf, including ones proxied through a dynamic (SOCKS) tunnel.
+Trade-off: an IPv6-only destination can no longer be reached through the proxy (rare in
+practice).
+
 ## Version 2.2.0
 
 **Release Date:** 2026-08-09
