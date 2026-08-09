@@ -65,7 +65,8 @@ class SSHTunnelManager(QMainWindow):
         self.dashboard = ProfessionalDashboard(self)
         self.tunnel_cards = ProfessionalTunnelCardsWidget(self)
         self.log_widget = ProfessionalLogWidget(self)
-        
+        self.log = self.log_widget.add_log
+
         # Existing service handlers
         self.file_ops_manager = FileOperationsManager(self)
         self.rtsp_handler = RTSPHandler(self)

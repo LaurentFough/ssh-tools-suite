@@ -79,7 +79,8 @@ ssh-tunnel-manager = "ssh_tunnel_manager.__main__:main"
 ssh-tools-installer = "third_party_installer.__main__:main"
 
 [project.gui-scripts]
-ssh-tunnel-manager-gui = "ssh_tunnel_manager.gui:main"
+ssh-tunnel-manager-gui = "ssh_tunnel_manager.__main__:main"
+third-party-installer-gui = "third_party_installer.gui.main_window:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
