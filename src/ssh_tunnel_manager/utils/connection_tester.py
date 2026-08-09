@@ -123,6 +123,75 @@ class ConnectionTester:
         return urls
     
     @staticmethod
+    def test_socks_proxy(local_port: int, target_host: str, target_port: int, timeout: float = 5) -> tuple[bool, str]:
+        """Test a dynamic (SOCKS5) tunnel by connecting THROUGH it to target_host:target_port.
+
+        A minimal no-auth SOCKS5 CONNECT handshake (RFC 1928, domain-name addressing so
+        the proxy itself resolves the target - works for hostnames and IP literals
+        alike). Proves the proxy actually relays a connection end-to-end, not just that
+        the local port is listening (test_local_port() only confirms the latter).
+        """
+        try:
+            target_bytes = target_host.encode('ascii')
+        except UnicodeEncodeError:
+            return False, f"Invalid test target host: {target_host!r}"
+
+        if not target_bytes or len(target_bytes) > 255:
+            return False, f"Invalid test target host: {target_host!r}"
+
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect(('localhost', local_port))
+
+            # Greeting: SOCKS version 5, 1 auth method offered, no-auth (0x00)
+            sock.sendall(b'\x05\x01\x00')
+            greeting_reply = sock.recv(2)
+            if len(greeting_reply) != 2 or greeting_reply[0] != 0x05:
+                return False, "SOCKS proxy did not respond with a valid SOCKS5 greeting"
+            if greeting_reply[1] != 0x00:
+                return False, "SOCKS proxy requires authentication this test doesn't support"
+
+            # CONNECT request, ATYP=0x03 (domain name)
+            request = (
+                b'\x05\x01\x00\x03' + bytes([len(target_bytes)]) + target_bytes
+                + target_port.to_bytes(2, 'big')
+            )
+            sock.sendall(request)
+            reply = sock.recv(4)
+
+            if len(reply) < 2 or reply[0] != 0x05:
+                return False, "SOCKS proxy sent an invalid CONNECT reply"
+
+            status = reply[1]
+            if status == 0x00:
+                return True, f"SOCKS proxy successfully connected to {target_host}:{target_port}"
+
+            reasons = {
+                0x01: "general SOCKS server failure",
+                0x02: "connection not allowed by ruleset",
+                0x03: "network unreachable",
+                0x04: "host unreachable",
+                0x05: "connection refused by target",
+                0x06: "TTL expired",
+                0x07: "command not supported",
+                0x08: "address type not supported",
+            }
+            reason = reasons.get(status, f"error code {status}")
+            return False, f"SOCKS CONNECT to {target_host}:{target_port} failed: {reason}"
+
+        except socket.timeout:
+            return False, "SOCKS proxy test timed out"
+        except ConnectionRefusedError:
+            return False, f"Could not connect to local SOCKS port {local_port} - is the tunnel running?"
+        except Exception as e:
+            return False, f"SOCKS proxy test failed: {e}"
+        finally:
+            if sock:
+                sock.close()
+
+    @staticmethod
     def test_ssh_connectivity(host: str, port: int = 22, timeout: int = 5) -> tuple[bool, str]:
         """Test basic SSH connectivity (port 22)."""
         try:

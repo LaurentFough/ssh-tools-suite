@@ -3,35 +3,17 @@
 SSH Tunnel Manager - Constants and Configuration
 """
 
-import os
-import sys
-import tempfile
 from pathlib import Path
 
-
-def _default_control_dir() -> Path:
-    """Short-as-possible directory for SSH ControlMaster sockets.
-
-    AF_UNIX socket paths are limited to ~104-108 bytes total, and a user's home
-    directory path length is not under our control (verified in testing: even a
-    moderately nested $HOME can blow the limit once "/.ssh/.stm/control/<hash>" is
-    appended) - so this deliberately does NOT live under the home directory.
-    Prefers XDG_RUNTIME_DIR (short, per-user, tmpfs-backed) when available.
-    """
-    xdg_runtime = os.environ.get('XDG_RUNTIME_DIR')
-    if xdg_runtime:
-        return Path(xdg_runtime) / 'stm'
-    if sys.platform == 'win32':
-        return Path(tempfile.gettempdir()) / 'stm'
-    return Path(tempfile.gettempdir()) / f'.stm-{os.getuid()}'
-
-
 # Per-tunnel log files: kept under the home directory since these are meant to be
-# human-discoverable for debugging and aren't subject to any socket path length limit.
+# human-discoverable for debugging.
 TUNNEL_LOG_DIR = Path.home() / ".ssh" / ".stm" / "logs"
 
-# SSH ControlMaster socket directory - see _default_control_dir() docstring.
-TUNNEL_CONTROL_DIR = _default_control_dir()
+# Inert marker (passed as `-o SetEnv=<name>=1`) that identifies this app's own
+# tunnel processes on the command line, for process_utils.find_orphaned_tunnel_processes().
+# Tunnels deliberately don't use ControlMaster/ControlPath (see
+# TunnelConfig.get_ssh_command_args()), so this replaces ControlPath as the marker.
+TUNNEL_PROCESS_MARKER = "SSH_TUNNEL_MANAGER"
 
 # SSH prompt detection patterns
 SSH_PASSWORD_PROMPTS = [

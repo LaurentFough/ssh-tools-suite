@@ -555,6 +555,11 @@ QFrame#card:hover {{
     border-color: {COLORS['border_strong']};
 }}
 
+QFrame#card[selected="true"] {{
+    border: 2px solid {COLORS['accent_secondary']};
+    padding: 15px;
+}}
+
 QFrame#separator {{
     background-color: {COLORS['border_default']};
     max-height: 1px;

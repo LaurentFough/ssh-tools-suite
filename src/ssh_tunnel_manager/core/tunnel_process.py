@@ -3,6 +3,8 @@
 SSH Tunnel Manager - SSH Process Management
 """
 
+import logging
+import logging.handlers
 import re
 import shutil
 import subprocess
@@ -11,8 +13,12 @@ import threading
 import time
 from typing import Callable, Optional
 
+# Cap per-tunnel log files at 2MB with 3 rotated backups, rather than growing forever.
+_LOG_MAX_BYTES = 2 * 1024 * 1024
+_LOG_BACKUP_COUNT = 3
+
 from .models import TunnelConfig
-from .constants import PROCESS_ESTABLISH_DELAY, TUNNEL_CONTROL_DIR, TUNNEL_LOG_DIR
+from .constants import PROCESS_ESTABLISH_DELAY, TUNNEL_LOG_DIR
 
 _SAFE_NAME_RE = re.compile(r'[^A-Za-z0-9_.-]+')
 
@@ -33,7 +39,6 @@ class TunnelProcess:
         self.status = self.STATUS_STOPPED
         self.log_callback = log_callback
         self.connection_lost_count = 0  # Track connection lost messages
-        self.control_path: Optional[str] = None
         self._reader_thread: Optional[threading.Thread] = None
 
     def start(self) -> bool:
@@ -46,15 +51,9 @@ class TunnelProcess:
             self.status = self.STATUS_STARTING
             self.connection_lost_count = 0
 
-            TUNNEL_CONTROL_DIR.mkdir(parents=True, exist_ok=True)
             TUNNEL_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-            # ssh resolves %C to a short hash of (host, port, user) - keeps the actual
-            # socket filename short and deterministic, and lets stop() reuse the same
-            # templated path for `ssh -O exit`.
-            self.control_path = str(TUNNEL_CONTROL_DIR / "%C")
-
-            ssh_args = self.config.get_ssh_command_args(control_path=self.control_path)
+            ssh_args = self.config.get_ssh_command_args()
 
             # ssh_args[0] is always 'ssh' (see TunnelConfig.get_ssh_command_args); autossh
             # substitutes itself for that invocation, so it takes ssh's *arguments* only.
@@ -107,26 +106,50 @@ class TunnelProcess:
         """Sanitize the tunnel name for use as a log filename."""
         return _SAFE_NAME_RE.sub('_', self.config.name) or "tunnel"
 
+    def _get_file_logger(self, log_path) -> logging.Logger:
+        """A rotating, timestamped logger for this tunnel's log file.
+
+        logging.getLogger() returns the *same* Logger object for the same name across
+        the whole process, so a fresh handler must not be added on every start() of a
+        same-named tunnel - that would pile up duplicate handlers (and duplicate log
+        lines) across repeated start/stop cycles. Clear any existing handlers first.
+        """
+        logger = logging.getLogger(f"ssh_tunnel_manager.tunnel.{self._safe_log_name()}")
+        logger.setLevel(logging.INFO)
+        logger.propagate = False  # don't bubble up to the root logger
+
+        for handler in list(logger.handlers):
+            logger.removeHandler(handler)
+            handler.close()
+
+        handler = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=_LOG_MAX_BYTES, backupCount=_LOG_BACKUP_COUNT, encoding='utf-8'
+        )
+        # Same "hh:mm:ss" timestamp format as the in-app log widget
+        # (gui/widgets/professional_log.py), so file and UI timestamps line up.
+        handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S"))
+        logger.addHandler(handler)
+
+        return logger
+
     def _pump_output(self, process: subprocess.Popen, log_path) -> None:
         """Read the subprocess's merged stdout/stderr, tee to a log file and the log callback."""
         try:
-            with open(log_path, 'a', encoding='utf-8') as log_file:
-                log_file.write(f"\n=== Tunnel '{self.config.name}' started {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-                log_file.flush()
+            file_logger = self._get_file_logger(log_path)
+            file_logger.info("=== Tunnel '%s' started ===", self.config.name)
 
-                for line in process.stdout:
-                    line = line.rstrip('\n')
-                    if not line:
-                        continue
+            for line in process.stdout:
+                line = line.rstrip('\n')
+                if not line:
+                    continue
 
-                    log_file.write(line + '\n')
-                    log_file.flush()
+                file_logger.info(line)
 
-                    if self.log_callback:
-                        try:
-                            self.log_callback(f"[{self.config.name}] {line}", "info")
-                        except Exception:
-                            pass
+                if self.log_callback:
+                    try:
+                        self.log_callback(f"[{self.config.name}] {line}", "info")
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -160,18 +183,6 @@ class TunnelProcess:
         if not self.process:
             return
 
-        # Prefer a clean protocol-level shutdown via the SSH control socket.
-        if self.control_path:
-            try:
-                subprocess.run(
-                    ['ssh', '-S', self.control_path, '-O', 'exit',
-                     f'{self.config.ssh_user}@{self.config.ssh_host}'],
-                    capture_output=True, timeout=5
-                )
-                self.process.wait(timeout=5)
-            except Exception:
-                pass
-
         if self.process.poll() is None:
             try:
                 self.process.terminate()
@@ -188,7 +199,6 @@ class TunnelProcess:
         self.status = self.STATUS_STOPPED
         self.connection_lost_count = 0  # Reset counter when manually stopped
         self.process = None
-        self.control_path = None
 
     def is_alive(self) -> bool:
         """Check if the tunnel process is alive."""

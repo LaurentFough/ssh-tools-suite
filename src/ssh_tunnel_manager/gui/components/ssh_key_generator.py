@@ -202,15 +202,25 @@ class SSHKeyGeneratorDialog(QDialog):
             os.makedirs(ssh_dir, exist_ok=True)
             
             # Check if file already exists
-            if os.path.exists(private_path):
+            public_path_check = f"{private_path}.pub"
+            if os.path.exists(private_path) or os.path.exists(public_path_check):
                 reply = QMessageBox.question(
-                    self, "File Exists", 
+                    self, "File Exists",
                     f"Key file already exists: {private_path}\n\nOverwrite?",
                     QMessageBox.Yes | QMessageBox.No
                 )
                 if reply == QMessageBox.No:
                     return
-            
+
+                # ssh-keygen has its own "Overwrite (y/n)?" prompt for an existing file,
+                # separate from the confirmation above - it reads that from stdin, which
+                # this subprocess call doesn't feed, so it would otherwise hang waiting for
+                # input the user has no way to provide. Remove the old files first so
+                # ssh-keygen never encounters them and never prompts.
+                for existing in (private_path, public_path_check):
+                    if os.path.exists(existing):
+                        os.remove(existing)
+
             # Build ssh-keygen command
             cmd = ["ssh-keygen"]
             cmd.extend(["-t", self.key_type.currentText()])
@@ -236,17 +246,31 @@ class SSHKeyGeneratorDialog(QDialog):
             self.results_text.append("Generating SSH key pair...\n")
             self.results_text.append(f"Command: {' '.join(cmd[:-2])} -N [passphrase] -C '{comment}'\n")
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # stdin=DEVNULL: defense in depth. If ssh-keygen ever prompts for anything else
+            # we haven't anticipated, this turns a silent hang into a fast, visible failure
+            # instead of blocking on input the GUI has no way to supply.
+            result = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30)
             
             if result.returncode == 0:
                 self.results_text.append("✅ SSH key pair generated successfully!\n")
-                
+
                 # Read and display public key
                 public_path = f"{private_path}.pub"
                 if os.path.exists(public_path):
+                    # ssh-keygen already forces the private key to 600 regardless of
+                    # umask, but the public key's permissions follow the umask as-is -
+                    # under a strict umask (e.g. 077) it can end up 600 too, which is
+                    # unnecessarily restrictive for a key that's meant to be shared.
+                    # Set both explicitly to the standard recommended permissions.
+                    try:
+                        os.chmod(private_path, 0o600)
+                        os.chmod(public_path, 0o644)
+                    except OSError as e:
+                        self.results_text.append(f"⚠️ Could not set key file permissions: {e}\n")
+
                     with open(public_path, 'r') as f:
                         public_key = f.read().strip()
-                    
+
                     self.results_text.append("📋 Public Key:\n")
                     self.results_text.append(f"{public_key}\n\n")
                     

@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Dict
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QSplitter,
-    QSystemTrayIcon, QMenu, QApplication, QMessageBox
+    QMainWindow, QWidget, QVBoxLayout,
+    QSystemTrayIcon, QMenu, QApplication, QMessageBox, QDockWidget
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QBrush
@@ -122,38 +122,31 @@ class SSHTunnelManager(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
-        
+
         # Professional toolbar
         main_layout.addWidget(self.toolbar)
-        
-        # Content area with splitter
-        content_splitter = QSplitter(Qt.Vertical)
-        content_splitter.setHandleWidth(2)
-        
-        # Top section: Dashboard + Tunnel Cards
-        top_section = QWidget()
-        top_layout = QVBoxLayout(top_section)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(12)
-        
-        top_layout.addWidget(self.dashboard)
+
+        # Dashboard + Tunnel Cards
         self.dashboard.setVisible(False)  # Hidden by default
-        top_layout.addWidget(self.tunnel_cards)
-        
-        content_splitter.addWidget(top_section)
-        content_splitter.addWidget(self.log_widget)
-        
-        # Set proportions: 80% cards, 20% logs
-        content_splitter.setStretchFactor(0, 8)
-        content_splitter.setStretchFactor(1, 2)
-        content_splitter.setSizes([720, 180])
-        
-        main_layout.addWidget(content_splitter)
-        
+        main_layout.addWidget(self.dashboard)
+        main_layout.addWidget(self.tunnel_cards)
+
+        # Activity log lives in a dock widget: right-aligned by default, but the user
+        # can drag its title bar to float it as its own window, or redock it later.
+        self.log_dock = QDockWidget("Activity Log", self)
+        self.log_dock.setObjectName("activity_log_dock")
+        self.log_dock.setFeatures(
+            QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetClosable
+        )
+        self.log_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.log_dock.setWidget(self.log_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.log_dock)
+        self.resizeDocks([self.log_dock], [380], Qt.Horizontal)
+
         # Status bar
         status_bar = self.statusBar()
         status_bar.showMessage("Ready")
-        
+
         # Welcome message
         self.log("SSH Tunnel Manager started successfully", "success")
         self.log(f"Loaded {len(self.config_manager.get_all_configurations())} tunnel configurations", "info")
@@ -186,7 +179,8 @@ class SSHTunnelManager(QMainWindow):
         self.tunnel_cards.rtsp_tunnel.connect(self._launch_rtsp_by_name)
         self.tunnel_cards.rdp_tunnel.connect(self._launch_rdp_by_name)
         self.tunnel_cards.test_tunnel.connect(self._test_tunnel_by_name)
-        
+        self.tunnel_cards.tunnel_selected.connect(self._on_tunnel_selected)
+
         # File operations
         self.file_ops_manager.log_message.connect(lambda msg: self.log(msg, log_level_from_message(msg)))
         self.file_ops_manager.tunnel_needed.connect(self._start_tunnel_by_name)
@@ -348,7 +342,11 @@ class SSHTunnelManager(QMainWindow):
         
         # Update toolbar button states
         self.toolbar.update_button_states(False, False)
-    
+
+    def _on_tunnel_selected(self, name: str):
+        """Filter the activity log to the clicked tunnel's lines, or clear the filter."""
+        self.log_widget.set_filter(f"[{name}]" if name else "")
+
     def _update_tunnel_status(self, name: str, is_running: bool):
         """Update tunnel status from monitor."""
         if name in self.active_tunnels:
@@ -515,39 +513,90 @@ class SSHTunnelManager(QMainWindow):
         self.rdp_handler.launch_rdp_by_name(config_name)
     
     def _test_tunnel_by_name(self, config_name: str):
-        """Test tunnel connection by name."""
+        """Test tunnel connection by name - the actual check depends on tunnel type,
+        since a SOCKS proxy, a local forward, and a remote forward all need different
+        things verified (see the three branches below)."""
         from ..utils.connection_tester import ConnectionTester
-        
+
         config = self.config_manager.get_configuration(config_name)
         if not config:
             return
-        
+
         is_running = config_name in self.active_tunnels and self.active_tunnels[config_name].is_running
         if not is_running:
             QMessageBox.warning(self, "Test Error", f"Tunnel '{config_name}' is not running")
             return
-        
+
         self.log(f"Testing tunnel: {config_name}", "info")
-        
+
         try:
-            if config.tunnel_type == 'local':
-                if ConnectionTester.test_local_port(config.local_port):
+            if config.tunnel_type == 'dynamic':
+                # A SOCKS proxy has nothing to test on its own - connect THROUGH it to
+                # a real destination (the configured Test Target, or the tunnel's own
+                # SSH server by default) to prove it actually relays connections.
+                host, port = config.get_test_target()
+                success, message = ConnectionTester.test_socks_proxy(config.local_port, host, port)
+                self._show_test_result(config_name, success, message)
+
+            elif config.tunnel_type == 'local':
+                if config.test_target and config.test_target.strip():
+                    success, message = self._test_custom_target(config.test_target.strip())
+                elif ConnectionTester.test_local_port(config.local_port):
                     success, message = ConnectionTester.test_tunnel_connection(config)
-                    if success:
-                        self.log(f"Test successful: {message}", "success")
-                        QMessageBox.information(self, "Test Result", f"Tunnel '{config_name}' is working correctly!\n\n{message}")
-                    else:
-                        self.log(f"Test warning: {message}", "warning")
-                        QMessageBox.warning(self, "Test Result", f"Tunnel '{config_name}' has issues:\n\n{message}")
                 else:
-                    self.log(f"Test failed: Local port {config.local_port} not accessible", "error")
-                    QMessageBox.critical(self, "Test Result", f"Tunnel test failed!\n\nLocal port {config.local_port} is not accessible")
-            else:
-                self.log(f"Remote tunnel testing limited", "info")
-                QMessageBox.information(self, "Test Result", f"Remote tunnel '{config_name}' appears to be running")
+                    success, message = False, f"Local port {config.local_port} is not accessible"
+                self._show_test_result(config_name, success, message)
+
+            else:  # remote
+                # The forwarded port is exposed on the far side of the connection, not
+                # locally, so it can't be tested the way local/dynamic tunnels can -
+                # confirm the SSH server itself is reachable instead, and say so.
+                host, port = config.get_test_target()
+                success, message = ConnectionTester.test_ssh_connectivity(host, port)
+                message += ("\n\nNote: a remote-forwarded port is exposed on the far side of "
+                            "the connection, not locally, so this only confirms the SSH server "
+                            "is reachable - not that the forwarded service itself is reachable.")
+                self._show_test_result(config_name, success, message)
+
         except Exception as e:
             self.log(f"Error testing tunnel: {str(e)}", "error")
             QMessageBox.critical(self, "Test Error", f"Test failed: {str(e)}")
+
+    def _show_test_result(self, config_name: str, success: bool, message: str):
+        """Shared result display for _test_tunnel_by_name's three branches."""
+        if success:
+            self.log(f"Test successful: {message}", "success")
+            QMessageBox.information(self, "Test Result", f"Tunnel '{config_name}' is working correctly!\n\n{message}")
+        else:
+            self.log(f"Test failed: {message}", "error")
+            QMessageBox.critical(self, "Test Result", f"Tunnel '{config_name}' test failed!\n\n{message}")
+
+    def _test_custom_target(self, target: str) -> tuple[bool, str]:
+        """Test a user-configured Test Target override: an http(s):// URL, or a bare host:port."""
+        from ..utils.connection_tester import ConnectionTester
+        import urllib.request
+        import urllib.error
+
+        if target.startswith('http://') or target.startswith('https://'):
+            try:
+                req = urllib.request.Request(target, headers={'User-Agent': 'SSH-Tunnel-Tester/1.0'})
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    return True, f"Service responding: {target} (HTTP {response.status})"
+            except urllib.error.HTTPError as e:
+                if e.code in (200, 301, 302, 401, 403, 404):
+                    return True, f"Service responding (HTTP {e.code}): {target}"
+                return False, f"HTTP error {e.code} from {target}"
+            except Exception as e:
+                return False, f"Could not reach {target}: {e}"
+
+        if ':' in target:
+            host, _, port_text = target.rpartition(':')
+            if host and port_text.isdigit():
+                if ConnectionTester.test_local_port(int(port_text), host=host):
+                    return True, f"{host}:{port_text} is accessible"
+                return False, f"{host}:{port_text} is not accessible"
+
+        return False, f"Could not parse test target: {target!r} (expected a URL or host:port)"
     
     def _setup_ssh_key(self):
         """Setup SSH key."""

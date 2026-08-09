@@ -249,8 +249,11 @@ class MainWindowActions:
                 self.log(f"❌ Error auto-starting tunnel {name}: {str(e)}")
         
         if count > 0:
-            self.refresh_table()
-    
+            # self.refresh_table is a MainWindowActions-mixin attribute that's never bound
+            # to anything real (it's left as None from __init__); the live main window's
+            # actual refresh method is _refresh_ui, same as every other handler in this file.
+            self._refresh_ui()
+
     def import_tunnels(self):
         """Import tunnel configurations from file."""
         file_path, _ = QFileDialog.getOpenFileName(

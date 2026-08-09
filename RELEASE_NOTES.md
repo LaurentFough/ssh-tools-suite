@@ -1,5 +1,76 @@
 # SSH Tunnel Manager - Release Notes
 
+## Version 2.2.0
+
+**Release Date:** 2026-08-09
+
+### Major Changes
+
+#### Fixed: tunnels silently detaching from the app (Stopped / no Active Tunnels)
+
+Root-caused a bug where a tunnel would connect successfully but the app would report it as
+"Stopped," and the dashboard would show no active tunnels, even with a live tunnel running.
+Two separate causes were found and fixed:
+
+- The `%C` token previously used in `ControlPath` is a deterministic hash of host+port+user,
+  so a second `ssh` invocation for the same tunnel (a retry, an orphan, or a manual copy-pasted
+  command) would attach to an existing master as a "mux client" and exit almost immediately,
+  which the app misread as failure even though the original tunnel kept running untracked.
+- More fundamentally: `-o ControlMaster=auto`, used for every tunnel to enable clean `ssh -O
+  exit` shutdown, causes this era of OpenSSH to fork the real connection into an orphaned
+  background process and exit the originally-launched process with status 0 — independent of
+  `ControlPersist`. The app's process tracking (`subprocess.Popen.poll()`) saw that exit and
+  treated a genuinely-working tunnel as a failure to start.
+
+  **Fix:** tunnels no longer request SSH connection sharing at all (`-o ControlMaster=no -o
+  ControlPath=none`, set explicitly so it can't be overridden by a `ControlMaster`/
+  `ControlPersist` setting in the user's own `~/.ssh/config` either). The app only ever launches
+  one `ssh` process per tunnel and tracks it directly, so multiplexing was never actually
+  needed — a plain `SIGTERM` closes a `-N` session just as cleanly as `-O exit` did. Orphaned
+  tunnel processes are now identified by an inert `-o SetEnv=SSH_TUNNEL_MANAGER=1` marker
+  instead of the old `ControlPath`-based marker.
+
+#### New: configurable "Test Tunnel" + per-tunnel log rotation
+
+- The "Test" button on a running tunnel's card now runs a real, type-appropriate check instead
+  of a generic placeholder message: a live SOCKS5 handshake through the proxy for dynamic
+  tunnels, auto-detected (or overridden) service checks for local tunnels, and SSH reachability
+  for remote tunnels.
+- New optional "Test Target" field in the tunnel dialog's Advanced section to override what
+  gets tested, with type-aware placeholder text explaining the default when left blank.
+- Per-tunnel log files under `~/.ssh/.stm/logs/` now rotate at 2MB (3 backups kept) instead of
+  growing forever, and every line is timestamped (`hh:mm:ss`, matching the in-app log widget)
+  to make correlating file and UI logs during debugging easier.
+
+#### Other fixes this release
+
+- Advanced SSH options: a verbosity control (`-v`/`-vv`/`-vvv`), a free-form extra-options field
+  validated via `ssh -G` on save, and a quick-reference help dialog, in the tunnel config
+  dialog's new Advanced section.
+- Added a copy button to the resolved SSH command preview.
+- Fixed the tunnel-type dialog leaving stale remote-host/remote-port values visible (though
+  disabled) when switching to a dynamic (SOCKS) tunnel, and a related bug where saved dynamic
+  tunnels showed phantom "localhost"/"80" values on reopen.
+- Fixed "remote" tunnels silently ignoring a custom `remote_host` and always forwarding to
+  `localhost`.
+- Fixed SSH key generation hanging on overwrite (`ssh-keygen`'s own confirmation prompt was
+  reading from inherited stdin with no way to answer it from the GUI).
+- Fixed generated SSH keys not getting the recommended permissions (600 private / 644 public)
+  when the shell's umask was more restrictive.
+- Fixed key deployment ("ssh-copy-id") unexpectedly forking to a real terminal for password
+  entry instead of using the prepared GUI askpass helper.
+- Fixed the "Test Connection" button in the SSH key deployment dialog being a complete no-op.
+- Fixed the public-key format validator rejecting the app's own generated keys (a multi-word
+  default comment broke a naive `.split()`).
+- Fixed a `.pub` file being usable as an SSH identity path (silently "worked" only via
+  ssh-agent fallback; fails outright in headless launches) — now auto-corrected to the private
+  key counterpart, both when browsing for a key and when resolving a saved path.
+- Fixed crashes (segfaults) when deleting a tunnel, starting a tunnel, or resizing a tunnel
+  card — caused by eliding command text synchronously inside Qt's layout pass; now deferred via
+  `QTimer.singleShot`.
+- Added a cross-platform single-instance guard so the app can no longer be launched more than
+  once at a time.
+
 ## Version 2.1.0
 
 **Release Date:** 2026-08-09

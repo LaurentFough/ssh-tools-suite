@@ -28,7 +28,7 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
     from PySide6.QtCore import Qt
 except ImportError:
     print("PySide6 not installed. Please install with: pip install PySide6")
@@ -36,46 +36,19 @@ except ImportError:
 
 from ssh_tunnel_manager.gui import SSHTunnelManager
 from ssh_tunnel_manager.gui.main_window_actions import MainWindowActions
+from ssh_tunnel_manager.core.single_instance import SingleInstanceGuard
 
 
-class SSHTunnelManagerApp(SSHTunnelManager):
-    """Complete SSH Tunnel Manager application with all functionality."""
-    
-    def __init__(self):
-        """Initialize the complete SSH Tunnel Manager application."""
-        # Initialize the main window (SSHTunnelManager)
-        super().__init__()
-        
-        # Add MainWindowActions functionality as a composition
-        self._actions = MainWindowActions()
-        self._setup_actions_delegation()
-    
-    def _setup_actions_delegation(self):
-        """Set up delegation of MainWindowActions methods to this main window."""
-        # Delegate methods from MainWindowActions to this main window
-        # by binding them with self as the proper Qt widget parent
-        
-        # Bind essential attributes that MainWindowActions might need
-        self._actions.config_manager = self.config_manager
-        self._actions.active_tunnels = self.active_tunnels
-        self._actions.log = self.log
-        self._actions.refresh_table = self._refresh_ui  # Modern version uses _refresh_ui
-        
-    def add_tunnel(self):
-        """Add a new tunnel configuration."""
-        # Call the parent class method
-        super()._add_tunnel()
-    
-    def edit_tunnel(self):
-        """Edit selected tunnel configuration."""
-        # Call the parent class method instead of defining a custom implementation
-        super()._edit_tunnel()
-    
-    def remove_tunnel(self):
-        """Remove selected tunnel configuration."""
-        # Call the parent class method
-        super()._delete_tunnel()
-    
+class SSHTunnelManagerApp(SSHTunnelManager, MainWindowActions):
+    """Complete SSH Tunnel Manager application with all functionality.
+
+    Multiple inheritance (matching ssh_tunnel_manager/__main__.py, the pip-installed
+    entry point) rather than composition: SSHTunnelManager.__init__ calls
+    self.auto_start_tunnels(), a MainWindowActions method, so MainWindowActions must
+    actually be a base class for that call to resolve at all.
+    """
+    pass
+
 
 def main():
     """Main application entry point."""
@@ -84,12 +57,20 @@ def main():
     
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Allow running in system tray
-    
+
+    guard = SingleInstanceGuard()
+    if not guard.try_acquire():
+        QMessageBox.warning(
+            None, "SSH Tunnel Manager",
+            "SSH Tunnel Manager is already running.\n\n"
+            "Check your system tray for the existing window."
+        )
+        sys.exit(1)
+
     # Create and show main window
     window = SSHTunnelManagerApp()
     window.show()
-    
-    
+
     sys.exit(app.exec())
 
 

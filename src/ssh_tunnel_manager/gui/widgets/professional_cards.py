@@ -8,15 +8,15 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QFrame, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QFont, QFontMetrics
 
 from ..styles.professional_theme import COLORS, get_status_style
 
 
 class ProfessionalTunnelCard(QFrame):
     """A professional card widget for displaying tunnel information."""
-    
+
     # Signals
     start_clicked = Signal(str)
     stop_clicked = Signal(str)
@@ -27,19 +27,33 @@ class ProfessionalTunnelCard(QFrame):
     rtsp_clicked = Signal(str)
     rdp_clicked = Signal(str)
     test_clicked = Signal(str)
-    
+    card_clicked = Signal(str)
+
     def __init__(self, config_name: str, config, is_active: bool = False, parent=None):
         super().__init__(parent)
         self.config_name = config_name
         self.config = config
         self.is_active = is_active
-        
+
         self.setObjectName("card")
+        self.setProperty("selected", False)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(220)
-        
+        self.setFixedHeight(248)
+
         self._setup_ui()
+
+    def mousePressEvent(self, event):
+        """Select this card - only fires when the click lands on the card itself,
+        since child buttons consume their own clicks before this handler runs."""
+        self.card_clicked.emit(self.config_name)
+        super().mousePressEvent(event)
+
+    def set_selected(self, selected: bool):
+        """Toggle the visual 'selected' state (see professional_theme.py QFrame#card[selected])."""
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
     
     def _setup_ui(self):
         """Setup the card UI."""
@@ -114,7 +128,29 @@ class ProfessionalTunnelCard(QFrame):
             desc_label = QLabel(description)
             desc_label.setObjectName("muted")
             layout.addWidget(desc_label)
-        
+
+        # Resolved SSH command (elided to fit; full command in the tooltip)
+        command_layout = QHBoxLayout()
+        command_layout.setSpacing(6)
+
+        command_caption = QLabel("Command:")
+        command_caption.setObjectName("tertiary")
+        command_caption.setFont(QFont("Segoe UI", 10))
+        command_layout.addWidget(command_caption)
+
+        full_command = self.config.get_resolved_command_string() \
+            if hasattr(self.config, 'get_resolved_command_string') else ''
+        command_font = QFont("Consolas", 9)
+        command_value = QLabel()
+        command_value.setFont(command_font)
+        command_value.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        command_value.setToolTip(full_command)
+        command_layout.addWidget(command_value, 1)
+
+        layout.addLayout(command_layout)
+        self._command_value_label = command_value
+        self._full_command = full_command
+
         # Context-aware actions based on tunnel state and type
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(8)
@@ -181,6 +217,45 @@ class ProfessionalTunnelCard(QFrame):
         btn.setCursor(Qt.PointingHandCursor)
         return btn
 
+    def resizeEvent(self, event):
+        """Schedule a re-elide of the command label now that its width may have changed.
+
+        Deliberately does NOT call QFontMetrics.elidedText()/label.setText() directly
+        here. Confirmed via a native crash dump (faulthandler) that calling into Qt's
+        text-layout machinery synchronously from within an active layout pass -
+        resizeEvent is delivered from deep inside QLayout::activate() - can segfault
+        inside Shiboken's string marshaling, not raise a catchable Python exception,
+        because it re-enters Qt's layout/font engine while it's already mid-calculation.
+        A zero-delay QTimer.singleShot defers the actual work to a fresh event loop
+        iteration, outside any in-progress layout pass, which is the standard safe
+        pattern for this. The pending-flag avoids piling up redundant timers when
+        resizeEvent fires many times in a row before the first one runs.
+        """
+        super().resizeEvent(event)
+        if getattr(self, '_command_value_label', None) is None:
+            return
+        if getattr(self, '_elide_update_pending', False):
+            return
+        self._elide_update_pending = True
+        QTimer.singleShot(0, self._update_elided_command)
+
+    def _update_elided_command(self):
+        """Actually recompute and apply the elided command text (see resizeEvent)."""
+        self._elide_update_pending = False
+        label = getattr(self, '_command_value_label', None)
+        if label is None:
+            return
+        try:
+            width = label.width()
+            if width <= 0:
+                return
+            metrics = QFontMetrics(label.font())
+            elided = metrics.elidedText(self._full_command, Qt.ElideRight, width)
+            if elided != label.text():
+                label.setText(elided)
+        except Exception:
+            pass
+
 
 class ProfessionalTunnelCardsWidget(QWidget):
     """Container for professional tunnel cards."""
@@ -195,9 +270,11 @@ class ProfessionalTunnelCardsWidget(QWidget):
     rtsp_tunnel = Signal(str)
     rdp_tunnel = Signal(str)
     test_tunnel = Signal(str)
-    
+    tunnel_selected = Signal(str)  # empty string means selection was cleared
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.selected_tunnel_name: str = ""
         self._setup_ui()
     
     def _setup_ui(self):
@@ -247,9 +324,13 @@ class ProfessionalTunnelCardsWidget(QWidget):
             card.rtsp_clicked.connect(self.rtsp_tunnel.emit)
             card.rdp_clicked.connect(self.rdp_tunnel.emit)
             card.test_clicked.connect(self.test_tunnel.emit)
-            
+            card.card_clicked.connect(self._on_card_clicked)
+
+            if config_name == self.selected_tunnel_name:
+                card.set_selected(True)
+
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
-        
+
         # Show empty state if no tunnels
         if not tunnels_dict:
             empty_label = QLabel("No tunnels configured\nClick 'New Tunnel' to get started")
@@ -257,3 +338,14 @@ class ProfessionalTunnelCardsWidget(QWidget):
             empty_label.setAlignment(Qt.AlignCenter)
             empty_label.setFont(QFont("Segoe UI", 12))
             self.cards_layout.insertWidget(0, empty_label)
+
+    def _on_card_clicked(self, config_name: str):
+        """Select a card, or clear the selection if the already-selected card is clicked again."""
+        self.selected_tunnel_name = "" if config_name == self.selected_tunnel_name else config_name
+
+        for i in range(self.cards_layout.count()):
+            widget = self.cards_layout.itemAt(i).widget()
+            if isinstance(widget, ProfessionalTunnelCard):
+                widget.set_selected(widget.config_name == self.selected_tunnel_name)
+
+        self.tunnel_selected.emit(self.selected_tunnel_name)

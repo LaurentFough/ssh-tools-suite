@@ -23,9 +23,10 @@ def main():
 
     from .gui import SSHTunnelManager
     from .gui.main_window_actions import MainWindowActions
+    from .core.single_instance import SingleInstanceGuard
 
     try:
-        from PySide6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication, QMessageBox
         from PySide6.QtCore import Qt
     except ImportError:
         print("PySide6 not installed. Please install with: pip install PySide6")
@@ -38,14 +39,23 @@ def main():
     # Enable high DPI scaling
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
-    
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Allow running in system tray
-    
+
+    guard = SingleInstanceGuard()
+    if not guard.try_acquire():
+        QMessageBox.warning(
+            None, "SSH Tunnel Manager",
+            "SSH Tunnel Manager is already running.\n\n"
+            "Check your system tray for the existing window."
+        )
+        sys.exit(1)
+
     # Create and show main window
     window = SSHTunnelManagerApp()
     window.show()
-    
+
     sys.exit(app.exec())
 
 

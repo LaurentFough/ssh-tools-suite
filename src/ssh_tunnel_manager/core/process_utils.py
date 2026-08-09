@@ -11,7 +11,7 @@ from typing import Iterable
 
 import psutil
 
-from .constants import TUNNEL_CONTROL_DIR
+from .constants import TUNNEL_PROCESS_MARKER
 
 _TUNNEL_PROCESS_NAMES = {'ssh', 'ssh.exe', 'autossh', 'autossh.exe'}
 
@@ -19,12 +19,12 @@ _TUNNEL_PROCESS_NAMES = {'ssh', 'ssh.exe', 'autossh', 'autossh.exe'}
 def find_orphaned_tunnel_processes(known_pids: Iterable[int]) -> list[dict]:
     """Find ssh/autossh processes that belong to this app but aren't tracked in this session.
 
-    Matches on the app's control-socket directory appearing in the process's command
-    line (every tunnel launched by this app passes -o ControlPath=<TUNNEL_CONTROL_DIR>/%C),
-    so unrelated ssh processes on the system are not flagged.
+    Matches on the app's inert SetEnv marker appearing in the process's command line
+    (every tunnel launched by this app passes -o SetEnv=<TUNNEL_PROCESS_MARKER>=1), so
+    unrelated ssh processes on the system are not flagged.
     """
     known_pids = set(known_pids)
-    control_dir_marker = str(TUNNEL_CONTROL_DIR)
+    marker = f'SetEnv={TUNNEL_PROCESS_MARKER}='
     orphans = []
 
     for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'create_time']):
@@ -36,7 +36,7 @@ def find_orphaned_tunnel_processes(known_pids: Iterable[int]) -> list[dict]:
                 continue
 
             cmdline = info.get('cmdline') or []
-            if not any(control_dir_marker in arg for arg in cmdline):
+            if not any(marker in arg for arg in cmdline):
                 continue
 
             orphans.append({
